@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Table,
   TableBody,
@@ -13,42 +11,7 @@ import {
 import OrdersTableSkeleton from "./ui/OrdersTableSkeleton";
 import { getCardBgColor } from "@/lib/utils";
 
-
-
-export default function OrdersTable() {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const supabase = createClient();
-
-
-  useEffect(() => {
-    const fetchOrders = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("orders_history")
-        .select("*")
-        .order("updated_at", { ascending: false })
-        .limit(50);
-      if (!error) setOrders(data || []);
-      setLoading(false);
-    };
-
-    fetchOrders();
-
-    const channel = supabase
-      .channel("orders-history")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders_history" },
-        (payload) => {
-          setOrders((prev) => [payload.new, ...prev].slice(0, 50));
-        }
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, [supabase]);
-
+export default function OrdersTable({ orders = [], loading = false }) {
   return (
     <div className="w-full">
       <h1 className="text-lg font-medium mb-6">Orders</h1>
