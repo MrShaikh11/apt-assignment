@@ -5,99 +5,86 @@ import { createClient } from "@/lib/supabase/client";
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import OrdersTableSkeleton from "./ui/OrdersTableSkeleton";
+import { getCardBgColor } from "@/lib/utils";
+
+
 
 export default function OrdersTable() {
   const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  // Function to get background color based on status
-  const getCardBgColor = (order) => {
-    switch (order.status) {
-      case "deleted":
-        return "bg-red-200";
-      case "shipped":
-        return "bg-green-200";
-      case "pending":
-        return "bg-blue-200";
-      default:
-        return "bg-white";
-    }
-  };
 
   useEffect(() => {
     const fetchOrders = async () => {
+      setLoading(true);
       const { data, error } = await supabase
-        .from("orders")
+        .from("orders_history")
         .select("*")
-        .order("updated_at", { ascending: false });
+        .order("updated_at", { ascending: false })
+        .limit(50);
       if (!error) setOrders(data || []);
+      setLoading(false);
     };
 
     fetchOrders();
 
     const channel = supabase
-      .channel("orders-table")
+      .channel("orders-history")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
+        { event: "*", schema: "public", table: "orders_history" },
         (payload) => {
-          setOrders((prev) => {
-            if (payload.eventType === "INSERT") {
-              return [payload.new, ...prev];
-            }
-            if (payload.eventType === "UPDATE") {
-              return prev.map((o) => (o.id === payload.new.id ? payload.new : o));
-            }
-            if (payload.eventType === "DELETE") {
-              return prev.filter((o) => o.id !== payload.old.id);
-            }
-            return prev;
-          });
+          setOrders((prev) => [payload.new, ...prev].slice(0, 50));
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, [supabase]);
 
   return (
     <div className="w-full">
       <h1 className="text-lg font-medium mb-6">Orders</h1>
-      <Table className="w-full shadow-sm">
-        <TableCaption>All recent orders.</TableCaption>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[60px]">ID</TableHead>
-            <TableHead>Customer</TableHead>
-            <TableHead>Product</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Updated At</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {orders.map((order) => (
-            <TableRow key={order.id}>
-              <TableCell className="font-medium">{order.id}</TableCell>
-              <TableCell>{order.customer_name}</TableCell>
-              <TableCell>{order.product_name}</TableCell>
-              <TableCell className={`m-4 ${getCardBgColor(order)}`}>
-                {order.status}
-              </TableCell>
-              <TableCell className="text-right">
-                {new Date(order.updated_at).toLocaleString()}
-              </TableCell>
+
+      {loading ? (
+        <OrdersTableSkeleton />
+      ) : (
+        <Table className="w-full shadow-sm">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[60px]">ID</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Updated At</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {orders.map((order) => (
+              <TableRow key={`${order.order_id}-${order.updated_at}`}>
+                <TableCell className="font-medium">{order.order_id}</TableCell>
+                <TableCell>{order.customer_name}</TableCell>
+                <TableCell>{order.product_name}</TableCell>
+                <TableCell
+                  className={`px-2 py-1 rounded ${getCardBgColor(order)}`}
+                >
+                  {order.status}
+                </TableCell>
+                <TableCell className="text-right">
+                  {new Date(order.updated_at).toLocaleString()}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }
