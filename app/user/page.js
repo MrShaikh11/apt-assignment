@@ -5,6 +5,35 @@ import { Button } from "@/components/ui/button";
 import OrdersTableSkeleton from "@/components/ui/OrdersTableSkeleton";
 import UserOrdersTable from "@/components/UserOrdersTable";
 import OrderDialog from "@/components/OrderDialog";
+import { toast } from "sonner";
+
+function generateChangesMessage(oldOrder, newOrder) {
+  const changes = [];
+
+  if (oldOrder.customer_name !== newOrder.customer_name) {
+    changes.push(
+      `Customer name changed from "${oldOrder.customer_name}" → "${newOrder.customer_name}"`
+    );
+  }
+
+  if (oldOrder.product_name !== newOrder.product_name) {
+    changes.push(
+      `Product changed from "${oldOrder.product_name}" → "${newOrder.product_name}"`
+    );
+  }
+
+  if (oldOrder.status !== newOrder.status) {
+    if (newOrder.status === "cancelled") {
+      changes.push(`Order was cancelled`);
+    } else {
+      changes.push(
+        `Status changed from "${oldOrder.status}" → "${newOrder.status}"`
+      );
+    }
+  }
+
+  return changes.length > 0 ? changes.join(", ") : "No significant changes.";
+}
 
 export default function UserOrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -13,7 +42,6 @@ export default function UserOrdersPage() {
   const [isNewOrder, setIsNewOrder] = useState(false);
   const supabase = createClient();
 
-  // ✅ Fetch from `orders` (not history)
   useEffect(() => {
     const fetchOrders = async () => {
       setLoading(true);
@@ -29,7 +57,6 @@ export default function UserOrdersPage() {
 
     fetchOrders();
 
-    // ✅ Realtime subscription on `orders`
     const channel = supabase
       .channel("orders-changes")
       .on(
@@ -38,12 +65,18 @@ export default function UserOrdersPage() {
         (payload) => {
           if (payload.eventType === "INSERT") {
             setOrders((prev) => [payload.new, ...prev].slice(0, 50));
+            toast.success("🆕 New Order", {
+              description: `${payload.new.customer_name} placed an order for ${payload.new.product_name} (${payload.new.status})`,
+            });
           } else if (payload.eventType === "UPDATE") {
             setOrders((prev) =>
               prev.map((o) => (o.id === payload.new.id ? payload.new : o))
             );
-          } else if (payload.eventType === "DELETE") {
-            setOrders((prev) => prev.filter((o) => o.id !== payload.old.id));
+
+            const message = generateChangesMessage(payload.old, payload.new);
+            toast("✏️ Order Updated", {
+              description: `Order #${payload.new.id}: ${message}`,
+            });
           }
         }
       )
@@ -52,7 +85,6 @@ export default function UserOrdersPage() {
     return () => supabase.removeChannel(channel);
   }, [supabase]);
 
-  // ✅ Handle Add / Edit
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!editingOrder) return;
@@ -74,9 +106,15 @@ export default function UserOrdersPage() {
         .eq("id", id);
     }
 
-    // ✅ orders_history will auto-update via trigger
     setEditingOrder(null);
     setIsNewOrder(false);
+  };
+
+  const handleCancel = async (orderId) => {
+    await supabase
+      .from("orders")
+      .update({ status: "cancelled" })
+      .eq("id", orderId);
   };
 
   return (
@@ -106,6 +144,7 @@ export default function UserOrdersPage() {
             setEditingOrder(order);
             setIsNewOrder(false);
           }}
+          onCancel={handleCancel}
         />
       )}
 
