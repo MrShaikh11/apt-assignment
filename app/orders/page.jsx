@@ -17,7 +17,7 @@ export default function DashboardPage() {
         .from("orders_history")
         .select("*")
         .order("updated_at", { ascending: false })
-        .limit(50); // adjust as needed
+        .limit(50);
       if (!error && data) setUpdates(data);
       setLoading(false);
     };

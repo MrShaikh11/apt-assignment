@@ -6,34 +6,7 @@ import OrdersTableSkeleton from "@/components/ui/OrdersTableSkeleton";
 import UserOrdersTable from "@/components/UserOrdersTable";
 import OrderDialog from "@/components/OrderDialog";
 import { toast } from "sonner";
-
-function generateChangesMessage(oldOrder, newOrder) {
-  const changes = [];
-
-  if (oldOrder.customer_name !== newOrder.customer_name) {
-    changes.push(
-      `Customer name changed from "${oldOrder.customer_name}" → "${newOrder.customer_name}"`
-    );
-  }
-
-  if (oldOrder.product_name !== newOrder.product_name) {
-    changes.push(
-      `Product changed from "${oldOrder.product_name}" → "${newOrder.product_name}"`
-    );
-  }
-
-  if (oldOrder.status !== newOrder.status) {
-    if (newOrder.status === "cancelled") {
-      changes.push(`Order was cancelled`);
-    } else {
-      changes.push(
-        `Status changed from "${oldOrder.status}" → "${newOrder.status}"`
-      );
-    }
-  }
-
-  return changes.length > 0 ? changes.join(", ") : "No significant changes.";
-}
+import { generateOrderUpdateMessage } from "@/lib/utils";
 
 export default function UserOrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -63,6 +36,7 @@ export default function UserOrdersPage() {
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
         (payload) => {
+          console.log("Payload", payload);
           if (payload.eventType === "INSERT") {
             setOrders((prev) => [payload.new, ...prev].slice(0, 50));
             toast.success("🆕 New Order", {
@@ -73,9 +47,26 @@ export default function UserOrdersPage() {
               prev.map((o) => (o.id === payload.new.id ? payload.new : o))
             );
 
-            const message = generateChangesMessage(payload.old, payload.new);
-            toast("✏️ Order Updated", {
-              description: `Order #${payload.new.id}: ${message}`,
+            const message = generateOrderUpdateMessage(
+              payload.old,
+              payload.new
+            );
+            if (
+              payload.old.status !== payload.new.status &&
+              payload.new.status === "cancelled"
+            ) {
+              toast.error("⚠️ Order Cancelled", {
+                description: message,
+              });
+            } else {
+              toast("✏️ Order Updated", {
+                description: message,
+              });
+            }
+          } else if (payload.eventType === "DELETE") {
+            setOrders((prev) => prev.filter((o) => o.id !== payload.old.id));
+            toast.error("🗑️ Order Deleted", {
+              description: `Order #${payload.old.id} (${payload.old.customer_name} - ${payload.old.product_name}) was deleted.`,
             });
           }
         }
